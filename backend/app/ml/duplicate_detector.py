@@ -1,11 +1,11 @@
 
 from pathlib import Path
 from functools import lru_cache
+from urllib.parse import urlparse
 
 import faiss
 import numpy as np
 import pandas as pd
-
 
 
 # --------------------------------------------------
@@ -20,6 +20,12 @@ METADATA_PATH = ROOT_DIR / "models" / "issue_faiss_metadata.csv"
 
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
+# Limit CPU threads to reduce resource usage
+import torch
+
+torch.set_num_threads(1)
+torch.set_num_interop_threads(1)
+
 
 # --------------------------------------------------
 # STEP 1: BUILD FAISS INDEX
@@ -31,20 +37,15 @@ def build_index():
 
     df = pd.read_csv(DATASET_PATH)
 
-    # Remove records without usable issue text
     df = df.dropna(subset=["text"]).copy()
-
     df["text"] = df["text"].astype(str).str.strip()
-
     df = df[df["text"] != ""].reset_index(drop=True)
 
     print("Total issues:", len(df))
-
     print("\nLoading Sentence Transformer model...")
 
-
     from sentence_transformers import SentenceTransformer
-    
+
     model = SentenceTransformer(MODEL_NAME)
 
     print("\nGenerating embeddings...")
@@ -57,32 +58,19 @@ def build_index():
         normalize_embeddings=True
     )
 
-    embeddings = np.asarray(
-        embeddings,
-        dtype="float32"
-    )
+    embeddings = np.asarray(embeddings, dtype="float32")
 
     print("\nCreating FAISS index...")
 
     dimension = embeddings.shape[1]
 
-    # Inner product on normalized vectors = cosine similarity
     index = faiss.IndexFlatIP(dimension)
-
     index.add(embeddings)
 
-    # Save FAISS index
-    INDEX_PATH.parent.mkdir(
-        parents=True,
-        exist_ok=True
-    )
+    INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-    faiss.write_index(
-        index,
-        str(INDEX_PATH)
-    )
+    faiss.write_index(index, str(INDEX_PATH))
 
-    # Save corresponding issue metadata
     metadata_columns = [
         "issue_id",
         "repository",
@@ -97,14 +85,11 @@ def build_index():
         index=False
     )
 
-    # Clear cached resources so a rebuilt index is loaded next time
     load_duplicate_resources.cache_clear()
 
     print("\n========== INDEX BUILD COMPLETE ==========")
-
     print("Total indexed issues:", index.ntotal)
     print("Embedding dimensions:", dimension)
-
     print("FAISS index saved:", INDEX_PATH)
     print("Metadata saved:", METADATA_PATH)
 
@@ -117,29 +102,23 @@ def build_index():
 def load_duplicate_resources():
 
     if not INDEX_PATH.exists() or not METADATA_PATH.exists():
-
         raise FileNotFoundError(
             "FAISS index or metadata not found. Build the index first."
         )
 
     print("Loading FAISS index...")
 
-    index = faiss.read_index(
-        str(INDEX_PATH)
-    )
+    index = faiss.read_index(str(INDEX_PATH))
 
     print("Loading issue metadata...")
 
-    metadata = pd.read_csv(
-        METADATA_PATH
-    )
+    metadata = pd.read_csv(METADATA_PATH)
 
     print("Loading Sentence Transformer model...")
 
     from sentence_transformers import SentenceTransformer
-    model = SentenceTransformer(
-        MODEL_NAME
-    )
+
+    model = SentenceTransformer(MODEL_NAME)
 
     print("Duplicate detection resources loaded successfully.")
 
@@ -150,15 +129,12 @@ def load_duplicate_resources():
 # STEP 3: BATCH SEMANTIC SEARCH
 # --------------------------------------------------
 
-
 def search_similar_issues_batch(
     queries,
     exclude_urls=None,
     top_k=5,
     similarity_threshold=0.70
 ):
-
-    from urllib.parse import urlparse
 
     if not queries:
         return []
@@ -177,12 +153,14 @@ def search_similar_issues_batch(
         raise ValueError("top_k must be at least 1.")
 
     if not 0 <= similarity_threshold <= 1:
-        raise ValueError("Similarity threshold must be between 0 and 1.")
+        raise ValueError(
+            "Similarity threshold must be between 0 and 1."
+        )
 
-    # Generate query embeddings
+    # Generate query embeddings with a smaller batch size
     query_embeddings = model.encode(
         queries,
-        batch_size=32,
+        batch_size=8,
         convert_to_numpy=True,
         normalize_embeddings=True,
         show_progress_bar=False
@@ -193,11 +171,15 @@ def search_similar_issues_batch(
         dtype="float32"
     )
 
-    # Search the complete index so same-repository candidates
-    # are not missed behind results from other repositories.
+    # Search a limited number of candidates instead of the full index
+    candidate_k = min(
+        index.ntotal,
+        max(100, top_k * 20)
+    )
+
     scores, indices = index.search(
         query_embeddings,
-        index.ntotal
+        candidate_k
     )
 
     all_results = []
@@ -210,9 +192,11 @@ def search_similar_issues_batch(
 
         results = []
 
-        # Extract owner/repository from the original GitHub issue URL
         parsed_url = urlparse(excluded_url) if excluded_url else None
-        url_parts = parsed_url.path.strip("/").split("/") if parsed_url else []
+        url_parts = (
+            parsed_url.path.strip("/").split("/")
+            if parsed_url else []
+        )
 
         query_repository = (
             "/".join(url_parts[:2])
@@ -227,7 +211,6 @@ def search_similar_issues_batch(
 
             similarity = float(score)
 
-            # Apply minimum similarity threshold
             if similarity < similarity_threshold:
                 continue
 
@@ -236,12 +219,16 @@ def search_similar_issues_batch(
             issue_url = str(issue["issue_url"])
             issue_repository = str(issue["repository"])
 
-            # Exclude the original issue itself
-            if excluded_url and issue_url.rstrip("/") == excluded_url.rstrip("/"):
+            if (
+                excluded_url
+                and issue_url.rstrip("/") == excluded_url.rstrip("/")
+            ):
                 continue
 
-            # Keep results from the same repository
-            if query_repository and issue_repository != query_repository:
+            if (
+                query_repository
+                and issue_repository != query_repository
+            ):
                 continue
 
             results.append({
@@ -261,16 +248,11 @@ def search_similar_issues_batch(
     return all_results
 
 
-
-
 # --------------------------------------------------
 # STEP 4: SINGLE ISSUE SEARCH
 # --------------------------------------------------
 
-def search_similar_issues(
-    query,
-    top_k=5
-):
+def search_similar_issues(query, top_k=5):
 
     results = search_similar_issues_batch(
         queries=[query],
@@ -285,5 +267,4 @@ def search_similar_issues(
 # --------------------------------------------------
 
 if __name__ == "__main__":
-
     build_index()
