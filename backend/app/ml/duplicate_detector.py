@@ -3,9 +3,8 @@ from pathlib import Path
 from functools import lru_cache
 from urllib.parse import urlparse
 
-import faiss
-import numpy as np
 import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 
 # --------------------------------------------------
@@ -14,132 +13,81 @@ import pandas as pd
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
 
-DATASET_PATH = ROOT_DIR / "data" / "issue_dataset.csv"
-INDEX_PATH = ROOT_DIR / "models" / "issue_faiss.index"
 METADATA_PATH = ROOT_DIR / "models" / "issue_faiss_metadata.csv"
 
-MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
-
-# Limit CPU threads to reduce resource usage
-import torch
-
-torch.set_num_threads(1)
-torch.set_num_interop_threads(1)
-
 
 # --------------------------------------------------
-# STEP 1: BUILD FAISS INDEX
-# --------------------------------------------------
-
-def build_index():
-
-    print("Loading dataset...")
-
-    df = pd.read_csv(DATASET_PATH)
-
-    df = df.dropna(subset=["text"]).copy()
-    df["text"] = df["text"].astype(str).str.strip()
-    df = df[df["text"] != ""].reset_index(drop=True)
-
-    print("Total issues:", len(df))
-    print("\nLoading Sentence Transformer model...")
-
-    from sentence_transformers import SentenceTransformer
-
-    model = SentenceTransformer(MODEL_NAME)
-
-    print("\nGenerating embeddings...")
-
-    embeddings = model.encode(
-        df["text"].tolist(),
-        batch_size=32,
-        show_progress_bar=True,
-        convert_to_numpy=True,
-        normalize_embeddings=True
-    )
-
-    embeddings = np.asarray(embeddings, dtype="float32")
-
-    print("\nCreating FAISS index...")
-
-    dimension = embeddings.shape[1]
-
-    index = faiss.IndexFlatIP(dimension)
-    index.add(embeddings)
-
-    INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-    faiss.write_index(index, str(INDEX_PATH))
-
-    metadata_columns = [
-        "issue_id",
-        "repository",
-        "title",
-        "category",
-        "issue_url",
-        "text"
-    ]
-
-    df[metadata_columns].to_csv(
-        METADATA_PATH,
-        index=False
-    )
-
-    load_duplicate_resources.cache_clear()
-
-    print("\n========== INDEX BUILD COMPLETE ==========")
-    print("Total indexed issues:", index.ntotal)
-    print("Embedding dimensions:", dimension)
-    print("FAISS index saved:", INDEX_PATH)
-    print("Metadata saved:", METADATA_PATH)
-
-
-# --------------------------------------------------
-# STEP 2: LOAD AND CACHE RESOURCES
+# LOAD AND CACHE RESOURCES
 # --------------------------------------------------
 
 @lru_cache(maxsize=1)
 def load_duplicate_resources():
 
-    if not INDEX_PATH.exists() or not METADATA_PATH.exists():
+    if not METADATA_PATH.exists():
         raise FileNotFoundError(
-            "FAISS index or metadata not found. Build the index first."
+            f"Issue metadata not found: {METADATA_PATH}"
         )
-
-    print("Loading FAISS index...")
-
-    index = faiss.read_index(str(INDEX_PATH))
 
     print("Loading issue metadata...")
 
-    metadata = pd.read_csv(METADATA_PATH)
+    metadata = pd.read_csv(
+        METADATA_PATH,
+        usecols=[
+            "issue_id",
+            "repository",
+            "title",
+            "category",
+            "issue_url",
+            "text"
+        ]
+    )
 
-    print("Loading Sentence Transformer model...")
+    metadata = metadata.fillna("")
 
-    from sentence_transformers import SentenceTransformer
+    metadata["text"] = metadata["text"].astype(str).str.strip()
 
-    model = SentenceTransformer(MODEL_NAME)
+    metadata = metadata[
+        metadata["text"] != ""
+    ].reset_index(drop=True)
 
-    print("Duplicate detection resources loaded successfully.")
+    if metadata.empty:
+        raise ValueError("No usable issue records found.")
 
-    return index, metadata, model
+    print("Building lightweight TF-IDF index...")
+
+    vectorizer = TfidfVectorizer(
+        max_features=20000,
+        ngram_range=(1, 2),
+        min_df=1,
+        stop_words="english",
+        sublinear_tf=True,
+        dtype=float
+    )
+
+    issue_matrix = vectorizer.fit_transform(
+        metadata["text"]
+    )
+
+    print("Duplicate detection resources loaded.")
+    print("Indexed issues:", len(metadata))
+    print("Vocabulary size:", len(vectorizer.vocabulary_))
+
+    return metadata, vectorizer, issue_matrix
 
 
 # --------------------------------------------------
-# STEP 3: BATCH SEMANTIC SEARCH
+# BATCH SIMILARITY SEARCH
 # --------------------------------------------------
 
 def search_similar_issues_batch(
     queries,
     exclude_urls=None,
     top_k=5,
-    similarity_threshold=0.70
+    similarity_threshold=0.15
 ):
 
     if not queries:
         return []
-
-    index, metadata, model = load_duplicate_resources()
 
     if exclude_urls is None:
         exclude_urls = [""] * len(queries)
@@ -157,42 +105,26 @@ def search_similar_issues_batch(
             "Similarity threshold must be between 0 and 1."
         )
 
-    # Generate query embeddings with a smaller batch size
-    query_embeddings = model.encode(
-        queries,
-        batch_size=8,
-        convert_to_numpy=True,
-        normalize_embeddings=True,
-        show_progress_bar=False
-    )
+    metadata, vectorizer, issue_matrix = load_duplicate_resources()
 
-    query_embeddings = np.asarray(
-        query_embeddings,
-        dtype="float32"
-    )
+    query_texts = [
+        str(query) if query else ""
+        for query in queries
+    ]
 
-    # Search a limited number of candidates instead of the full index
-    candidate_k = min(
-        index.ntotal,
-        max(100, top_k * 20)
-    )
-
-    scores, indices = index.search(
-        query_embeddings,
-        candidate_k
-    )
+    query_matrix = vectorizer.transform(query_texts)
 
     all_results = []
 
-    for row_scores, row_indices, excluded_url in zip(
-        scores,
-        indices,
+    for query_vector, excluded_url in zip(
+        query_matrix,
         exclude_urls
     ):
 
         results = []
 
         parsed_url = urlparse(excluded_url) if excluded_url else None
+
         url_parts = (
             parsed_url.path.strip("/").split("/")
             if parsed_url else []
@@ -204,35 +136,48 @@ def search_similar_issues_batch(
             else None
         )
 
-        for score, idx in zip(row_scores, row_indices):
+        # Sparse cosine similarity:
+        # TF-IDF vectors are L2 normalized by default.
+        similarity_scores = (
+            query_vector @ issue_matrix.T
+        ).toarray().ravel()
 
-            if idx == -1:
-                continue
+        # Consider highest-scoring candidates first.
+        candidate_indices = similarity_scores.argsort()[::-1]
 
-            similarity = float(score)
+        for idx in candidate_indices:
+
+            similarity = float(similarity_scores[idx])
 
             if similarity < similarity_threshold:
-                continue
+                break
 
             issue = metadata.iloc[int(idx)]
 
             issue_url = str(issue["issue_url"])
             issue_repository = str(issue["repository"])
 
+            # Exclude the original issue.
             if (
                 excluded_url
                 and issue_url.rstrip("/") == excluded_url.rstrip("/")
             ):
                 continue
 
+            # Restrict results to the same repository.
             if (
                 query_repository
                 and issue_repository != query_repository
             ):
                 continue
 
+            try:
+                issue_id = int(issue["issue_id"])
+            except (ValueError, TypeError):
+                issue_id = 0
+
             results.append({
-                "issue_id": int(issue["issue_id"]),
+                "issue_id": issue_id,
                 "repository": issue_repository,
                 "title": issue["title"],
                 "category": issue["category"],
@@ -249,7 +194,7 @@ def search_similar_issues_batch(
 
 
 # --------------------------------------------------
-# STEP 4: SINGLE ISSUE SEARCH
+# SINGLE ISSUE SEARCH
 # --------------------------------------------------
 
 def search_similar_issues(query, top_k=5):
@@ -260,11 +205,3 @@ def search_similar_issues(query, top_k=5):
     )
 
     return results[0]
-
-
-# --------------------------------------------------
-# MAIN: BUILD INDEX
-# --------------------------------------------------
-
-if __name__ == "__main__":
-    build_index()
