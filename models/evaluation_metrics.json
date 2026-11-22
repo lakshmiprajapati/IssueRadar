@@ -1,0 +1,146 @@
+{
+    "model_name": "TF-IDF + Logistic Regression",
+    "accuracy": 0.8345323741007195,
+    "macro_precision": 0.8249313952213313,
+    "macro_recall": 0.8243110778732936,
+    "macro_f1": 0.8243637862499366,
+    "weighted_f1": 0.8348744424695059,
+    "balanced_accuracy": 0.8243110778732936,
+    "classification_report": {
+        "bug": {
+            "precision": 0.8358778625954199,
+            "recall": 0.8521400778210116,
+            "f1-score": 0.8439306358381503,
+            "support": 514.0
+        },
+        "documentation": {
+            "precision": 0.8524590163934426,
+            "recall": 0.8253968253968254,
+            "f1-score": 0.8387096774193549,
+            "support": 63.0
+        },
+        "feature_request": {
+            "precision": 0.80078125,
+            "recall": 0.8266129032258065,
+            "f1-score": 0.8134920634920635,
+            "support": 248.0
+        },
+        "performance": {
+            "precision": 0.7533333333333333,
+            "recall": 0.7793103448275862,
+            "f1-score": 0.7661016949152543,
+            "support": 145.0
+        },
+        "question": {
+            "precision": 0.8822055137844611,
+            "recall": 0.8380952380952381,
+            "f1-score": 0.8595848595848596,
+            "support": 420.0
+        },
+        "accuracy": 0.8345323741007195,
+        "macro avg": {
+            "precision": 0.8249313952213313,
+            "recall": 0.8243110778732936,
+            "f1-score": 0.8243637862499366,
+            "support": 1390.0
+        },
+        "weighted avg": {
+            "precision": 0.8357550636903882,
+            "recall": 0.8345323741007195,
+            "f1-score": 0.8348744424695059,
+            "support": 1390.0
+        }
+    },
+    "confusion_matrix": [
+        [
+            438,
+            6,
+            18,
+            18,
+            34
+        ],
+        [
+            7,
+            52,
+            3,
+            0,
+            1
+        ],
+        [
+            30,
+            0,
+            205,
+            7,
+            6
+        ],
+        [
+            17,
+            0,
+            9,
+            113,
+            6
+        ],
+        [
+            32,
+            3,
+            21,
+            12,
+            352
+        ]
+    ],
+    "classes": [
+        "bug",
+        "documentation",
+        "feature_request",
+        "performance",
+        "question"
+    ],
+    "dataset": {
+        "total_samples": 6952,
+        "training_samples": 5562,
+        "testing_samples": 1390,
+        "duplicate_text_records": 32,
+        "category_distribution": {
+            "bug": 2572,
+            "question": 2096,
+            "feature_request": 1240,
+            "performance": 725,
+            "documentation": 319
+        },
+        "repository_distribution": {
+            "microsoft/vscode": 3644,
+            "pandas-dev/pandas": 1264,
+            "scikit-learn/scikit-learn": 1217,
+            "fastapi/fastapi": 626,
+            "pallets/flask": 201
+        },
+        "training_repository_distribution": {
+            "microsoft/vscode": 2931,
+            "pandas-dev/pandas": 1029,
+            "scikit-learn/scikit-learn": 951,
+            "fastapi/fastapi": 484,
+            "pallets/flask": 167
+        },
+        "testing_repository_distribution": {
+            "microsoft/vscode": 713,
+            "scikit-learn/scikit-learn": 266,
+            "pandas-dev/pandas": 235,
+            "fastapi/fastapi": 142,
+            "pallets/flask": 34
+        }
+    },
+    "configuration": {
+        "test_size": 0.2,
+        "random_state": 42,
+        "split_strategy": "stratified_random_split",
+        "class_weight": "balanced",
+        "ngram_range": [
+            1,
+            2
+        ],
+        "max_features": 20000,
+        "min_df": 1,
+        "sublinear_tf": true,
+        "max_iter": 1000
+    }
+}

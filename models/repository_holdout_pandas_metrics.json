@@ -1,0 +1,114 @@
+{
+    "experiment": "repository_holdout",
+    "test_repository": "pandas-dev/pandas",
+    "training_samples": 5688,
+    "testing_samples": 1264,
+    "training_repositories": {
+        "microsoft/vscode": 3644,
+        "scikit-learn/scikit-learn": 1217,
+        "fastapi/fastapi": 626,
+        "pallets/flask": 201
+    },
+    "testing_categories": {
+        "question": 475,
+        "feature_request": 351,
+        "bug": 256,
+        "performance": 105,
+        "documentation": 77
+    },
+    "accuracy": 0.6392405063291139,
+    "macro_precision": 0.7603873104819792,
+    "macro_recall": 0.7431612741546951,
+    "macro_f1": 0.6887967660974157,
+    "weighted_f1": 0.6002242368620302,
+    "balanced_accuracy": 0.7431612741546951,
+    "classification_report": {
+        "bug": {
+            "precision": 0.45124282982791586,
+            "recall": 0.921875,
+            "f1-score": 0.6059050064184852,
+            "support": 256.0
+        },
+        "documentation": {
+            "precision": 0.9078947368421053,
+            "recall": 0.8961038961038961,
+            "f1-score": 0.9019607843137255,
+            "support": 77.0
+        },
+        "feature_request": {
+            "precision": 0.6966292134831461,
+            "recall": 0.8831908831908832,
+            "f1-score": 0.7788944723618091,
+            "support": 351.0
+        },
+        "performance": {
+            "precision": 0.780952380952381,
+            "recall": 0.780952380952381,
+            "f1-score": 0.780952380952381,
+            "support": 105.0
+        },
+        "question": {
+            "precision": 0.9652173913043478,
+            "recall": 0.2336842105263158,
+            "f1-score": 0.376271186440678,
+            "support": 475.0
+        },
+        "accuracy": 0.6392405063291139,
+        "macro avg": {
+            "precision": 0.7603873104819792,
+            "recall": 0.7431612741546951,
+            "f1-score": 0.6887967660974157,
+            "support": 1264.0
+        },
+        "weighted avg": {
+            "precision": 0.7677382705497927,
+            "recall": 0.6392405063291139,
+            "f1-score": 0.6002242368620302,
+            "support": 1264.0
+        }
+    },
+    "confusion_matrix": [
+        [
+            236,
+            1,
+            15,
+            3,
+            1
+        ],
+        [
+            5,
+            69,
+            2,
+            1,
+            0
+        ],
+        [
+            31,
+            3,
+            310,
+            4,
+            3
+        ],
+        [
+            15,
+            0,
+            8,
+            82,
+            0
+        ],
+        [
+            236,
+            3,
+            110,
+            15,
+            111
+        ]
+    ],
+    "confusion_matrix_labels": [
+        "bug",
+        "documentation",
+        "feature_request",
+        "performance",
+        "question"
+    ]
+}
