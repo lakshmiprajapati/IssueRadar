@@ -1,0 +1,15 @@
+Manual Label Quality Audit
+
+Repository: pandas-dev/pandas
+Samples reviewed: 25
+Actual category: question
+Model prediction: bug
+
+Preliminary title-based assessment:
+Likely bug: 23
+Ambiguous: 2
+
+Finding:
+The Usage Question GitHub label can include
+issues whose titles describe apparent software defects.
+This creates potential label noise in the dataset.
